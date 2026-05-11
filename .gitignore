@@ -1,0 +1,17 @@
+venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+
+# Google OAuth token (auto-regenerated; contains refresh token)
+credentials/token.json
+# Google client secret (contains your app credentials)
+credentials/credentials.json
+
+# Generated data
+audio/
+transcripts/
+descriptions/
+logs/
+metadata.json
