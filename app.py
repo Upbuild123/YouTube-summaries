@@ -33,6 +33,10 @@ st.markdown("""
 html, body, [class*="css"] {
     font-family: 'Inter', sans-serif;
 }
+/* Hide Streamlit's default header bar */
+[data-testid="stHeader"] { display: none !important; }
+header { display: none !important; }
+
 .block-container {
     padding-top: 2rem;
     padding-bottom: 4rem;
