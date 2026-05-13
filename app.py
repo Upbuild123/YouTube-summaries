@@ -541,81 +541,94 @@ def _run_pipeline(
         prog3.progress(1.0, text="Done")
         st.write("✅  Descriptions complete")
 
-        # ── Step 4: Google Doc ────────────────────────────────────────────────
-        st.write("#### 📄  Step 4 — Google Doc")
-        log4 = st.empty()
-        log4.caption("Authenticating with Google…")
-
+        # ── Step 4: Output ────────────────────────────────────────────────────
         data = _meta_load()
-        svc  = _google_service()
 
-        if existing_doc_id:
-            # Append to the doc the user specified
-            doc_id = existing_doc_id
-            data["google_doc_id"] = doc_id
-            # Reset google_doc_updated for selected episodes so they get written
-            sel_ids = {e["id"] for e in sel_entries}
-            for ep in data["episodes"]:
-                if ep["video_id"] in sel_ids:
-                    ep["status"]["google_doc_updated"] = False
-            _meta_save(data)
-            log4.caption(f"Appending to existing doc {doc_id}…")
+        if existing_doc_id == "__screen__":
+            # Screen mode — collect descriptions and display in app
+            st.write("#### 📋  Step 4 — Collecting results")
+            results = []
+            for entry in sel_entries:
+                ep   = _get_ep(data, entry["id"])
+                desc = ep.get("description") or (
+                    (BASE_DIR / ep["description_file"]).read_text(encoding="utf-8").strip()
+                    if ep.get("description_file") and (BASE_DIR / ep["description_file"]).exists() else None
+                )
+                if desc:
+                    results.append({"title": entry.get("title", ""), "description": desc})
+            st.session_state.screen_results = results
+            st.session_state.doc_url        = ""
+            st.session_state.pipeline_done  = True
+            st.write("✅  Done")
+            status.update(label="✅  Pipeline complete!", state="complete")
+
         else:
-            # Always create a fresh doc — clear any previously stored doc_id
-            data["google_doc_id"] = None
-            sel_ids = {e["id"] for e in sel_entries}
-            for ep in data["episodes"]:
-                if ep["video_id"] in sel_ids:
-                    ep["status"]["google_doc_updated"] = False
-            _meta_save(data)
-            doc    = svc.documents().create(body={"title": pl_title}).execute()
-            doc_id = doc["documentId"]
-            data   = _meta_load()
-            data["google_doc_id"] = doc_id
-            _meta_save(data)
-            log4.caption(f"Created new doc {doc_id}…")
+            # Google Doc mode
+            st.write("#### 📄  Step 4 — Google Doc")
+            log4 = st.empty()
+            log4.caption("Authenticating with Google…")
+            svc  = _google_service()
 
-        to_write = [e for e in sel_entries
-                    if _get_ep(data, e["id"])["status"]["description_generated"]
-                    and not _get_ep(data, e["id"])["status"]["google_doc_updated"]]
-        prog4 = st.progress(0.0)
-        nw    = len(to_write)
+            if existing_doc_id:
+                doc_id = existing_doc_id
+                data["google_doc_id"] = doc_id
+                sel_ids = {e["id"] for e in sel_entries}
+                for ep in data["episodes"]:
+                    if ep["video_id"] in sel_ids:
+                        ep["status"]["google_doc_updated"] = False
+                _meta_save(data)
+                log4.caption(f"Appending to existing doc {doc_id}…")
+            else:
+                data["google_doc_id"] = None
+                sel_ids = {e["id"] for e in sel_entries}
+                for ep in data["episodes"]:
+                    if ep["video_id"] in sel_ids:
+                        ep["status"]["google_doc_updated"] = False
+                _meta_save(data)
+                doc    = svc.documents().create(body={"title": pl_title}).execute()
+                doc_id = doc["documentId"]
+                data   = _meta_load()
+                data["google_doc_id"] = doc_id
+                _meta_save(data)
+                log4.caption(f"Created new doc {doc_id}…")
 
-        for i, entry in enumerate(to_write):
-            vid  = entry["id"]
-            data = _meta_load()
-            ep   = _get_ep(data, vid)
-            desc = ep.get("description") or (
-                (BASE_DIR / ep["description_file"]).read_text(encoding="utf-8").strip()
-                if (BASE_DIR / ep["description_file"]).exists() else None
-            )
-            if not desc:
-                continue
+            to_write = [e for e in sel_entries
+                        if _get_ep(data, e["id"])["status"]["description_generated"]
+                        and not _get_ep(data, e["id"])["status"]["google_doc_updated"]]
+            prog4 = st.progress(0.0)
+            nw    = len(to_write)
 
-            ep["description"] = desc
-            log4.caption(f"📄  Writing: {entry.get('title', '')[:70]}")
-            prog4.progress(i / max(nw, 1), text=f"{i}/{nw}")
+            for i, entry in enumerate(to_write):
+                vid  = entry["id"]
+                data = _meta_load()
+                ep   = _get_ep(data, vid)
+                desc = ep.get("description") or (
+                    (BASE_DIR / ep["description_file"]).read_text(encoding="utf-8").strip()
+                    if (BASE_DIR / ep["description_file"]).exists() else None
+                )
+                if not desc:
+                    continue
+                ep["description"] = desc
+                log4.caption(f"📄  Writing: {entry.get('title', '')[:70]}")
+                prog4.progress(i / max(nw, 1), text=f"{i}/{nw}")
+                reqs = _ep_requests(ep, _doc_end(svc, doc_id))
+                ok   = _batch_update(svc, doc_id, reqs)
+                data = _meta_load()
+                ep   = _get_ep(data, vid)
+                if ok:
+                    ep["status"]["google_doc_updated"] = True
+                _meta_save(data)
+                time.sleep(0.4)
+                prog4.progress((i + 1) / max(nw, 1), text=f"{i + 1}/{nw}")
 
-            reqs = _ep_requests(ep, _doc_end(svc, doc_id))
-            ok   = _batch_update(svc, doc_id, reqs)
-            data = _meta_load()
-            ep   = _get_ep(data, vid)
-            if ok:
-                ep["status"]["google_doc_updated"] = True
-            _meta_save(data)
-            time.sleep(0.4)
+            log4.empty()
+            prog4.progress(1.0, text="Done")
+            st.write("✅  Google Doc written")
 
-            prog4.progress((i + 1) / max(nw, 1), text=f"{i + 1}/{nw}")
-
-        log4.empty()
-        prog4.progress(1.0, text="Done")
-        st.write("✅  Google Doc written")
-
-        # ── Finish ────────────────────────────────────────────────────────────
-        doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
-        st.session_state.doc_url       = doc_url
-        st.session_state.pipeline_done = True
-        status.update(label="✅  Pipeline complete!", state="complete")
+            doc_url = f"https://docs.google.com/document/d/{doc_id}/edit"
+            st.session_state.doc_url       = doc_url
+            st.session_state.pipeline_done = True
+            status.update(label="✅  Pipeline complete!", state="complete")
 
 
 # ── Session state defaults ─────────────────────────────────────────────────────
@@ -627,11 +640,12 @@ _DEFAULTS: dict = {
     "selected_ids":   set(),
     "pipeline_done":  False,
     "doc_url":        "",
-    "doc_mode":         "new",       # "new" | "existing"
+    "doc_mode":         "screen",    # "screen" | "new" | "existing"
     "existing_doc_url": "",
     "system_prompt":    None,        # None = use default from pipeline.py
     "prompt_template":  None,        # None = use default from pipeline.py
     "prompt_preset":    "Title, Description & Quotes",
+    "screen_results":   [],          # list of {title, description} for screen mode
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -834,12 +848,6 @@ if st.session_state.fetched:
     if _PIPELINE_OK and not OPENAI_API_KEY:
         st.error("❌ `OPENAI_API_KEY` not set — needed for step 3 (descriptions).")
         prereqs_ok = False
-    if _PIPELINE_OK and not GOOGLE_CREDENTIALS_FILE.exists():
-        st.error(
-            f"❌ Google credentials not found at `{GOOGLE_CREDENTIALS_FILE}` — "
-            "needed for step 4 (Google Doc)."
-        )
-        prereqs_ok = False
 
     # ── Prompt selector ──────────────────────────────────────────────────────
     _PRESET_SIMPLE = """\
@@ -1005,17 +1013,27 @@ Transcript:
                 st.session_state.prompt_template = edited_tmpl
                 st.success("Custom prompt saved.")
 
-    # ── Google Doc destination ────────────────────────────────────────────────
-    st.markdown("**Google Doc**")
+    # ── Output destination ────────────────────────────────────────────────────
+    st.markdown("**Output**")
     doc_mode = st.radio(
-        "Google Doc destination",
-        options=["new", "existing"],
-        format_func=lambda x: "Create a new Google Doc" if x == "new" else "Append to an existing Google Doc",
-        index=0 if st.session_state.doc_mode == "new" else 1,
+        "Output destination",
+        options=["screen", "new", "existing"],
+        format_func=lambda x: {
+            "screen":   "Show on screen (copy & paste)",
+            "new":      "Create a new Google Doc",
+            "existing": "Append to an existing Google Doc",
+        }[x],
+        index=["screen", "new", "existing"].index(st.session_state.doc_mode)
+              if st.session_state.doc_mode in ["screen", "new", "existing"] else 0,
         horizontal=True,
         label_visibility="collapsed",
     )
     st.session_state.doc_mode = doc_mode
+
+    if doc_mode == "screen":
+        st.caption("Descriptions will be displayed here after the pipeline runs — no Google account needed.")
+        if _PIPELINE_OK and not GOOGLE_CREDENTIALS_FILE.exists():
+            pass  # fine — Google Doc not needed for screen mode
 
     existing_doc_id = ""
     if doc_mode == "existing":
@@ -1033,10 +1051,17 @@ Transcript:
             st.warning("Paste a Google Doc link to continue.")
             prereqs_ok = False
 
-    run_ok = n_sel > 0 and prereqs_ok and (doc_mode == "new" or existing_doc_id)
+    if doc_mode in ("new", "existing") and _PIPELINE_OK and not GOOGLE_CREDENTIALS_FILE.exists():
+        st.error(
+            f"❌ Google credentials not found at `{GOOGLE_CREDENTIALS_FILE}` — "
+            "needed for Google Doc output. Choose **Show on screen** to skip this."
+        )
+        prereqs_ok = False
+
+    run_ok = n_sel > 0 and prereqs_ok and (doc_mode in ("screen", "new") or existing_doc_id)
 
     if st.button(
-        f"▶  Run Pipeline  ({n_sel} episode{'s' if n_sel != 1 else ''})",
+        f"▶  Run  ({n_sel} episode{'s' if n_sel != 1 else ''})",
         type="primary",
         use_container_width=True,
         disabled=not run_ok,
@@ -1045,7 +1070,7 @@ Transcript:
         _run_pipeline(
             sel_entries, entries,
             st.session_state.pl_title, st.session_state.pl_url,
-            existing_doc_id=existing_doc_id,
+            existing_doc_id=existing_doc_id if doc_mode != "screen" else "__screen__",
             system_prompt=st.session_state.system_prompt or "",
             prompt_template=st.session_state.prompt_template or "",
         )
@@ -1068,3 +1093,24 @@ if st.session_state.pipeline_done and st.session_state.doc_url:
     )
     st.markdown("")
     st.code(url, language=None)
+
+if st.session_state.pipeline_done and st.session_state.screen_results:
+    st.divider()
+    st.markdown('<div class="step-label">Results</div>', unsafe_allow_html=True)
+    st.subheader("Generated descriptions")
+    for i, r in enumerate(st.session_state.screen_results):
+        with st.container():
+            st.markdown(f"**{r['title']}**")
+            st.markdown(r["description"])
+            # Copy button
+            escaped = r["description"].replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+            import streamlit.components.v1 as _cv1
+            _cv1.html(f"""
+            <button onclick="navigator.clipboard.writeText(`{escaped}`).then(() => {{
+                this.textContent = 'Copied!';
+                setTimeout(() => this.textContent = 'Copy', 1500);
+            }})" style="cursor:pointer;background:#fff;border:1px solid rgba(168,85,247,0.4);
+            border-radius:6px;padding:0.25rem 0.8rem;font-size:0.78rem;
+            font-family:Inter,sans-serif;color:#a855f7;font-weight:500;">Copy</button>
+            """, height=38)
+        st.divider()
