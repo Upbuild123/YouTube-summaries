@@ -561,6 +561,7 @@ def _run_pipeline(
             st.session_state.pipeline_done  = True
             st.write("✅  Done")
             status.update(label="✅  Pipeline complete!", state="complete")
+            st.rerun()
 
         else:
             # Google Doc mode
@@ -644,7 +645,7 @@ _DEFAULTS: dict = {
     "existing_doc_url": "",
     "system_prompt":    None,        # None = use default from pipeline.py
     "prompt_template":  None,        # None = use default from pipeline.py
-    "prompt_preset":    "Title, Description & Quotes",
+    "prompt_preset":    "Description and Quotes",
     "screen_results":   [],          # list of {title, description} for screen mode
 }
 for _k, _v in _DEFAULTS.items():
@@ -851,7 +852,20 @@ if st.session_state.fetched:
 
     # ── Prompt selector ──────────────────────────────────────────────────────
     _PRESET_SIMPLE = """\
-Write a 5–10 sentence description of the transcript below. Summarize the main topics covered, the key ideas or arguments made, and any notable moments, tensions, or conclusions. Write in plain, clear prose. Do not use bullet points. Do not open with "In this episode" or "This episode." Do not end with a call to action.
+Write a description of the transcript below. Output exactly two things:
+
+TITLE
+Use the source title exactly as given — do not rewrite or shorten it.
+
+DESCRIPTION
+5–10 sentences. Summarize the main topics covered, the key ideas or arguments made, and any notable moments, tensions, or conclusions. Write in plain, clear prose. Do not use bullet points. Do not open with "In this episode" or "This episode." Do not end with a call to action.
+
+OUTPUT FORMAT (use exactly this structure):
+TITLE
+[title here]
+
+DESCRIPTION
+[your description here]
 
 Source title: <<<TITLE>>>
 
@@ -945,9 +959,9 @@ Transcript:
 ---"""
 
     _PRESETS = {
-        "Title, Description & Quotes": None,  # None = use pipeline.py defaults
-        "Morning Rounds": _PRESET_MORNING_ROUNDS,
-        "Description only (5–10 sentences)": _PRESET_SIMPLE,
+        "Description and Quotes": None,  # None = use pipeline.py defaults
+        "Description only": _PRESET_SIMPLE,
+        "Morning Rounds specific output": _PRESET_MORNING_ROUNDS,
         "Custom": "custom",
     }
 
@@ -956,27 +970,27 @@ Transcript:
             "Choose a prompt",
             options=list(_PRESETS.keys()),
             index=list(_PRESETS.keys()).index(
-                st.session_state.get("prompt_preset", "Title, Description & Quotes")
+                st.session_state.get("prompt_preset", "Description and Quotes")
             ),
             label_visibility="collapsed",
             key="prompt_preset_radio",
         )
         st.session_state["prompt_preset"] = preset_choice
 
-        if preset_choice == "Title, Description & Quotes":
+        if preset_choice == "Description and Quotes":
             st.session_state.system_prompt   = None
             st.session_state.prompt_template = None
             st.caption("Generates a suggested title, a structured description, and 5–10 key quotes. Works across any type of recorded conversation.")
 
-        elif preset_choice == "Morning Rounds":
+        elif preset_choice == "Description only":
+            st.session_state.system_prompt   = None
+            st.session_state.prompt_template = _PRESET_SIMPLE
+            st.caption("Generates the YouTube video title plus a plain prose description. No quotes.")
+
+        elif preset_choice == "Morning Rounds specific output":
             st.session_state.system_prompt   = None
             st.session_state.prompt_template = _PRESET_MORNING_ROUNDS
             st.caption("Hari is the sole speaker. Generates a title (with series name and episode number), a 3–6 sentence description, and 5–7 original quotes from Hari only — excluding scripture recitations.")
-
-        elif preset_choice == "Description only (5–10 sentences)":
-            st.session_state.system_prompt   = None
-            st.session_state.prompt_template = _PRESET_SIMPLE
-            st.caption("Generates a plain prose summary with no title or quotes.")
 
         # View prompt (shown for all presets except Custom, which already shows the text)
         if preset_choice != "Custom":
