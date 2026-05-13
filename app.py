@@ -1117,23 +1117,86 @@ if st.session_state.pipeline_done and st.session_state.doc_url:
     st.markdown("")
     st.code(url, language=None)
 
+def _parse_output(raw: str) -> dict:
+    """Split AI output into title, description, and quotes sections."""
+    # Normalise bold markdown on section headers
+    raw = re.sub(r'\*{1,2}(TITLE|DESCRIPTION|QUOTES)\*{1,2}', r'\1', raw)
+
+    title = desc = quotes = ""
+
+    m_title = re.search(r'^TITLE\s*\n(.+?)(?=\nDESCRIPTION|\nQUOTES|$)', raw, re.M | re.S)
+    if m_title:
+        title = m_title.group(1).strip()
+
+    m_desc = re.search(r'^DESCRIPTION\s*\n(.+?)(?=\nQUOTES|$)', raw, re.M | re.S)
+    if m_desc:
+        desc = m_desc.group(1).strip()
+
+    m_quotes = re.search(r'^QUOTES\s*\n(.+)', raw, re.M | re.S)
+    if m_quotes:
+        quotes = m_quotes.group(1).strip()
+
+    # If no structure found, treat entire output as description
+    if not title and not desc and not quotes:
+        desc = raw.strip()
+
+    return {"title": title, "description": desc, "quotes": quotes}
+
+
+import streamlit.components.v1 as _cv1
+
+def _copy_btn(text: str, key: str) -> None:
+    """Render a copy-to-clipboard button using a data attribute to avoid JS escaping issues."""
+    import json
+    safe = json.dumps(text)  # properly escaped JSON string
+    _cv1.html(f"""
+    <script>
+    (function() {{
+        var btn = document.getElementById('cb_{key}');
+        if (btn) return;
+        btn = document.createElement('button');
+        btn.id = 'cb_{key}';
+        btn.textContent = 'Copy';
+        btn.style.cssText = 'cursor:pointer;background:#fff;border:1px solid #d1d5db;border-radius:6px;padding:0.28rem 0.9rem;font-size:0.78rem;font-family:Inter,sans-serif;color:#555;font-weight:500;';
+        btn.onclick = function() {{
+            navigator.clipboard.writeText({safe}).then(function() {{
+                btn.textContent = 'Copied!';
+                setTimeout(function() {{ btn.textContent = 'Copy'; }}, 1500);
+            }});
+        }};
+        document.body.appendChild(btn);
+    }})();
+    </script>
+    """, height=38)
+
+
 if st.session_state.pipeline_done and st.session_state.screen_results:
     st.divider()
-    st.markdown('<div class="step-label">Results</div>', unsafe_allow_html=True)
-    st.subheader("Generated descriptions")
     for i, r in enumerate(st.session_state.screen_results):
-        with st.container():
-            st.markdown(f"**{r['title']}**")
-            st.markdown(r["description"])
-            # Copy button
-            escaped = r["description"].replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-            import streamlit.components.v1 as _cv1
-            _cv1.html(f"""
-            <button onclick="navigator.clipboard.writeText(`{escaped}`).then(() => {{
-                this.textContent = 'Copied!';
-                setTimeout(() => this.textContent = 'Copy', 1500);
-            }})" style="cursor:pointer;background:#fff;border:1px solid rgba(168,85,247,0.4);
-            border-radius:6px;padding:0.25rem 0.8rem;font-size:0.78rem;
-            font-family:Inter,sans-serif;color:#a855f7;font-weight:500;">Copy</button>
-            """, height=38)
+        parsed = _parse_output(r["description"])
+        yt_title = r["title"]
+
+        # Title — prefer AI-generated, fall back to YouTube title
+        display_title = parsed["title"] or yt_title
+        st.markdown(f"### {display_title}")
+
+        if parsed["description"]:
+            st.markdown(parsed["description"])
+
+        if parsed["quotes"]:
+            st.markdown("**Quotes**")
+            for line in parsed["quotes"].splitlines():
+                line = line.strip()
+                if line:
+                    clean = re.sub(r'^[-•*]\s*', '', line)
+                    st.markdown(f"- {clean}")
+
+        # Copy button — passes the full clean text
+        copy_text = display_title + "\n\n"
+        if parsed["description"]:
+            copy_text += parsed["description"] + "\n\n"
+        if parsed["quotes"]:
+            copy_text += "Quotes\n" + parsed["quotes"]
+        _copy_btn(copy_text.strip(), key=str(i))
+
         st.divider()
