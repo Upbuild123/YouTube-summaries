@@ -453,11 +453,12 @@ def _run_pipeline(
         st.write("✅  Audio download complete")
 
         # ── Step 2: Transcripts ───────────────────────────────────────────────
+        # Try YouTube captions first (no audio needed) for all episodes,
+        # then fall back to VTT/Whisper only for those that have audio.
         st.write("#### 📝  Step 2 — Transcripts")
         data     = _meta_load()
         to_trans = [e for e in sel_entries
-                    if _get_ep(data, e["id"])["status"]["audio_downloaded"]
-                    and not _get_ep(data, e["id"])["status"]["transcript_obtained"]]
+                    if not _get_ep(data, e["id"])["status"]["transcript_obtained"]]
         prog2 = st.progress(0.0)
         log2  = st.empty()
         nt    = len(to_trans)
@@ -472,15 +473,23 @@ def _run_pipeline(
             log2.caption(f"📝  {title[:70]}")
 
             transcript = source = None
-            for getter, label in [
-                (lambda: _transcript_youtube(vid),                "youtube_captions"),
-                (lambda: _transcript_vtt(ep.get("subtitle_file")), "vtt_sidecar"),
-                (lambda: _transcript_whisper(ep["audio_file"]),   "whisper_api"),
-            ]:
-                transcript = getter()
+
+            # Always try YouTube captions first — works without audio
+            transcript = _transcript_youtube(vid)
+            if transcript:
+                source = "youtube_captions"
+
+            # VTT sidecar — only if audio was downloaded
+            if not transcript and ep.get("subtitle_file"):
+                transcript = _transcript_vtt(ep.get("subtitle_file"))
                 if transcript:
-                    source = label
-                    break
+                    source = "vtt_sidecar"
+
+            # Whisper — only if audio was downloaded
+            if not transcript and ep["status"].get("audio_downloaded") and ep.get("audio_file"):
+                transcript = _transcript_whisper(ep["audio_file"])
+                if transcript:
+                    source = "whisper_api"
 
             data = _meta_load()
             ep   = _get_ep(data, vid)
