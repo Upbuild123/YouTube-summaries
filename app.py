@@ -971,10 +971,53 @@ Transcript:
 <<<EXCERPT>>>
 ---"""
 
+    _PRESET_NEWSLETTER = """\
+Write 2–3 standalone newsletter blurbs based on the transcript below.
+
+Each blurb should work for a reader who has never heard the podcast — do not summarize the episode. Instead, take one specific idea, tension, or insight from the transcript and develop it into a short, standalone reflection.
+
+STYLE & TONE
+- Short paragraphs — often 1–3 sentences; white space is intentional and creates rhythm
+- Voice: first person plural ("we") or second person ("you") — never "the speaker," "the presenter," or "the episode"
+- Opens with a hook: a striking statement, a vivid contrast, a question, or an unexpected image
+- Develops the idea through observation, analogy, or a concrete example drawn from the transcript
+- May reference a teaching, Sanskrit term, or concept briefly — but always grounded in plain English
+- Ends with a reflective question or quiet provocation — never a call to action, never promotional
+- Warm but not soft. Philosophical but accessible. Specific, not vague.
+- Avoid words like "transformative," "enlightening," "profound," "powerful," "ultimately"
+- Do not mention the podcast, the episode, or the speaker by name
+
+TITLE
+Each blurb gets a short, punchy title — not a summary, more like a provocation or a direct question.
+Examples:
+  "Are you living for the tongue or the stomach?"
+  "Never Let a Good Existential Crisis Go to Waste"
+  "Own Your Needs or They Become Entitlements"
+  "Same Block, Different Worlds. What Are You Awake To?"
+  "What Has Been Done for Me?"
+
+OUTPUT FORMAT
+Separate each blurb with ---
+
+---
+[Title]
+
+[Body — short paragraphs, a blank line between each]
+
+---
+
+Source title: <<<TITLE>>>
+
+Transcript:
+---
+<<<EXCERPT>>>
+---"""
+
     _PRESETS = {
         "Description and Quotes": None,  # None = use pipeline.py defaults
         "Description only": _PRESET_SIMPLE,
         "Morning Rounds specific output": _PRESET_MORNING_ROUNDS,
+        "Newsletter Blurbs": _PRESET_NEWSLETTER,
         "Custom": "custom",
     }
 
@@ -1004,6 +1047,11 @@ Transcript:
             st.session_state.system_prompt   = None
             st.session_state.prompt_template = _PRESET_MORNING_ROUNDS
             st.caption("Hari is the sole speaker. Generates a title (with series name and episode number), a 3–6 sentence description, and 5–7 original quotes from Hari only — excluding scripture recitations.")
+
+        elif preset_choice == "Newsletter Blurbs":
+            st.session_state.system_prompt   = None
+            st.session_state.prompt_template = _PRESET_NEWSLETTER
+            st.caption("Generates 2–3 standalone newsletter blurbs. Each blurb takes one idea from the transcript and develops it into a short, punchy reflection — not a summary, not promotional.")
 
         # View prompt (shown for all presets except Custom, which already shows the text)
         if preset_choice != "Custom":
