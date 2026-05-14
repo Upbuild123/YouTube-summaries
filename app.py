@@ -515,13 +515,31 @@ def _run_pipeline(
         # ── Step 3: Descriptions ──────────────────────────────────────────────
         st.write("#### 🤖  Step 3 — AI Descriptions")
         data    = _meta_load()
-        to_desc = [e for e in sel_entries
-                   if _get_ep(data, e["id"])["status"]["transcript_obtained"]
-                   and not _get_ep(data, e["id"])["status"]["description_generated"]]
+        screen_mode = existing_doc_id == "__screen__"
+
+        # In screen mode always regenerate so the user gets fresh output
+        if screen_mode:
+            to_desc = [e for e in sel_entries
+                       if _get_ep(data, e["id"])["status"]["transcript_obtained"]]
+        else:
+            to_desc = [e for e in sel_entries
+                       if _get_ep(data, e["id"])["status"]["transcript_obtained"]
+                       and not _get_ep(data, e["id"])["status"]["description_generated"]]
+
         prog3 = st.progress(0.0)
         log3  = st.empty()
         nd    = len(to_desc)
 
+        if nd == 0:
+            no_transcript = [e for e in sel_entries
+                             if not _get_ep(data, e["id"])["status"]["transcript_obtained"]]
+            if no_transcript:
+                st.warning(f"⚠️  No transcripts found for {len(no_transcript)} episode(s) — "
+                           "cannot generate descriptions. Check that audio was downloaded and captions are available.")
+            else:
+                st.info("All descriptions already generated — nothing to do.")
+
+        desc_errors = []
         for i, entry in enumerate(to_desc):
             vid   = entry["id"]
             title = entry.get("title", "")
@@ -532,34 +550,49 @@ def _run_pipeline(
             log3.caption(f"🤖  {title[:70]}")
 
             t_path = BASE_DIR / ep["transcript_file"]
-            if t_path.exists():
+            if not t_path.exists():
+                desc_errors.append(f"Transcript file missing for: {title[:60]}")
+                continue
+
+            try:
                 desc = _generate_description(
                     title, t_path.read_text(encoding="utf-8"),
                     **({"system_prompt": system_prompt} if system_prompt else {}),
                     **({"prompt_template": prompt_template} if prompt_template else {}),
                 )
-                data = _meta_load()
-                ep   = _get_ep(data, vid)
-                if desc:
-                    (BASE_DIR / ep["description_file"]).write_text(desc, encoding="utf-8")
-                    ep["description"]                     = desc
-                    ep["status"]["description_generated"] = True
-                else:
-                    ep.setdefault("errors", []).append("Description generation failed")
-                _meta_save(data)
+            except Exception as exc:
+                desc_errors.append(f"API error for '{title[:50]}': {exc}")
+                desc = None
+
+            data = _meta_load()
+            ep   = _get_ep(data, vid)
+            if desc:
+                (BASE_DIR / ep["description_file"]).write_text(desc, encoding="utf-8")
+                ep["description"]                     = desc
+                ep["status"]["description_generated"] = True
+            else:
+                err_msg = f"Description generation returned empty for: {title[:60]}"
+                ep.setdefault("errors", []).append(err_msg)
+                if err_msg not in desc_errors:
+                    desc_errors.append(err_msg)
+            _meta_save(data)
 
             prog3.progress((i + 1) / max(nd, 1), text=f"{i + 1}/{nd}")
 
         log3.empty()
         prog3.progress(1.0, text="Done")
-        st.write("✅  Descriptions complete")
+        for err in desc_errors:
+            st.error(f"❌  {err}")
+        if not desc_errors:
+            st.write("✅  Descriptions complete")
 
         # ── Step 4: Output ────────────────────────────────────────────────────
         data = _meta_load()
 
-        if existing_doc_id == "__screen__":
+        if screen_mode:
             # Screen mode — collect descriptions and display in app
             st.write("#### 📋  Step 4 — Collecting results")
+            data    = _meta_load()
             results = []
             for entry in sel_entries:
                 ep   = _get_ep(data, entry["id"])
@@ -569,10 +602,11 @@ def _run_pipeline(
                 )
                 if desc:
                     results.append({"title": entry.get("title", ""), "description": desc})
+            if not results:
+                st.error("❌  No output was generated. Check that transcripts exist and the OpenAI API key is set correctly.")
             st.session_state.screen_results = results
             st.session_state.doc_url        = ""
             st.session_state.pipeline_done  = True
-            st.write("✅  Done")
             status.update(label="✅  Pipeline complete!", state="complete")
             st.rerun()
 
