@@ -140,11 +140,23 @@ def _meta_load() -> dict:
         with METADATA_FILE.open("r", encoding="utf-8") as fh:
             return json.load(fh)
 
+def _sanitize_strings(obj):
+    """Recursively strip control characters from all string values before JSON serialisation."""
+    if isinstance(obj, dict):
+        return {k: _sanitize_strings(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_strings(v) for v in obj]
+    if isinstance(obj, str):
+        # Remove control chars (0x00-0x1f) except \t \n \r which json.dumps handles fine
+        import re as _re
+        return _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', obj)
+    return obj
+
 def _meta_save(data: dict) -> None:
     with _meta_lock:
         tmp = METADATA_FILE.with_suffix(".tmp")
         with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+            json.dump(_sanitize_strings(data), fh, indent=2, ensure_ascii=False)
         tmp.replace(METADATA_FILE)
 
 def _get_ep(data: dict, video_id: str) -> dict | None:
