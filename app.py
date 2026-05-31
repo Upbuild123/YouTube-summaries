@@ -528,7 +528,12 @@ def _run_pipeline(
 
         log2.empty()
         prog2.progress(1.0, text="Done")
-        st.write("✅  Transcripts complete")
+        data = _meta_load()
+        n_transcripts = sum(1 for e in sel_entries if _get_ep(data, e["id"])["status"]["transcript_obtained"])
+        if n_transcripts == 0:
+            st.warning(f"⚠️  0/{len(sel_entries)} transcripts obtained — cannot generate descriptions.")
+        else:
+            st.write(f"✅  Transcripts complete ({n_transcripts}/{len(sel_entries)} obtained)")
 
         # ── Step 3: Descriptions ──────────────────────────────────────────────
         st.write("#### 🤖  Step 3 — AI Descriptions")
@@ -600,8 +605,12 @@ def _run_pipeline(
 
         log3.empty()
         prog3.progress(1.0, text="Done")
+        data = _meta_load()
+        n_descs = sum(1 for e in sel_entries if _get_ep(data, e["id"])["status"]["description_generated"])
         for err in desc_errors:
             st.error(f"❌  {err}")
+        if not desc_errors:
+            st.write(f"✅  Descriptions complete ({n_descs}/{len(sel_entries)} generated)")
         if not desc_errors:
             st.write("✅  Descriptions complete")
         st.session_state.pipeline_errors = desc_errors
