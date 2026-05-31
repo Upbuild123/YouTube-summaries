@@ -1179,13 +1179,19 @@ Transcript:
         disabled=not run_ok,
     ):
         sel_entries = [e for e in entries if e["id"] in st.session_state.selected_ids]
-        _run_pipeline(
-            sel_entries, entries,
-            st.session_state.pl_title, st.session_state.pl_url,
-            existing_doc_id=existing_doc_id if doc_mode != "screen" else "__screen__",
-            system_prompt=st.session_state.system_prompt or "",
-            prompt_template=st.session_state.prompt_template or "",
-        )
+        try:
+            _run_pipeline(
+                sel_entries, entries,
+                st.session_state.pl_title, st.session_state.pl_url,
+                existing_doc_id=existing_doc_id if doc_mode != "screen" else "__screen__",
+                system_prompt=st.session_state.system_prompt or "",
+                prompt_template=st.session_state.prompt_template or "",
+            )
+        except Exception as _pipeline_exc:
+            import traceback
+            st.session_state.pipeline_errors = [traceback.format_exc()]
+            st.session_state.pipeline_done   = True
+            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # STEP 4 — RESULT
