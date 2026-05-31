@@ -534,8 +534,9 @@ def _run_pipeline(
             no_transcript = [e for e in sel_entries
                              if not _get_ep(data, e["id"])["status"]["transcript_obtained"]]
             if no_transcript:
-                st.warning(f"⚠️  No transcripts found for {len(no_transcript)} episode(s) — "
-                           "cannot generate descriptions. Check that audio was downloaded and captions are available.")
+                msg = f"No transcripts found for {len(no_transcript)} episode(s) — cannot generate descriptions. Check that audio was downloaded and captions are available."
+                st.warning(f"⚠️  {msg}")
+                st.session_state.pipeline_errors = [msg]
             else:
                 st.info("All descriptions already generated — nothing to do.")
 
@@ -585,6 +586,7 @@ def _run_pipeline(
             st.error(f"❌  {err}")
         if not desc_errors:
             st.write("✅  Descriptions complete")
+        st.session_state.pipeline_errors = desc_errors
 
         # ── Step 4: Output ────────────────────────────────────────────────────
         data = _meta_load()
@@ -694,6 +696,7 @@ _DEFAULTS: dict = {
     "prompt_template":  None,        # None = use default from pipeline.py
     "prompt_preset":    "Description and Quotes",
     "screen_results":   [],          # list of {title, description} for screen mode
+    "pipeline_errors":  [],          # errors to show after rerun
 }
 for _k, _v in _DEFAULTS.items():
     if _k not in st.session_state:
@@ -1255,6 +1258,11 @@ def _copy_btn(text: str, key: str) -> None:
     </script>
     """, height=38)
 
+
+if st.session_state.pipeline_done and st.session_state.get("pipeline_errors"):
+    st.divider()
+    for err in st.session_state.pipeline_errors:
+        st.error(f"❌  {err}")
 
 if st.session_state.pipeline_done and st.session_state.screen_results:
     st.divider()
