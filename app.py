@@ -294,6 +294,24 @@ div[data-testid="stText"], .stCaption p {
 </style>
 """, unsafe_allow_html=True)
 
+# ── Write Google credentials from Streamlit secrets (Streamlit Cloud only) ────
+def _write_google_secrets() -> None:
+    creds_dir = Path(__file__).parent / "credentials"
+    creds_dir.mkdir(exist_ok=True)
+    try:
+        if "GOOGLE_CREDENTIALS_JSON" in st.secrets:
+            (creds_dir / "credentials.json").write_text(
+                st.secrets["GOOGLE_CREDENTIALS_JSON"], encoding="utf-8"
+            )
+        if "GOOGLE_TOKEN_JSON" in st.secrets:
+            (creds_dir / "token.json").write_text(
+                st.secrets["GOOGLE_TOKEN_JSON"], encoding="utf-8"
+            )
+    except Exception:
+        pass  # running locally without secrets — credentials managed manually
+
+_write_google_secrets()
+
 # ── Import pipeline ────────────────────────────────────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent))
 try:
